@@ -4,6 +4,14 @@
 
 A utility-focused financial planning tool that helps users manage their monthly budget by calculating daily spending allowances. Users input their total monthly budget, desired savings amount, and select a month to view how much they can spend each day while meeting their savings goals. The application features a clean, design system-based interface built with React and styled using Tailwind CSS with shadcn/ui components.
 
+## Recent Changes (November 2025)
+
+- Implemented complete frontend with input controls, summary cards, and daily spending cards
+- Added local storage persistence for all user inputs
+- Implemented copy-to-clipboard functionality with toast notifications
+- Added responsive grid layout (1/2/3 columns based on viewport)
+- All calculations update in real-time as user types
+
 ## User Preferences
 
 Preferred communication style: Simple, everyday language.
