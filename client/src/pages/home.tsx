@@ -147,18 +147,22 @@ export default function Home() {
 
     const daysArray = eachDayOfInterval({ start: startDate, end: endDate });
     const days: any[] = [];
-    let carryover = 0; // Track unspent amount from previous day
+    let carryover = 0; // Track unspent or overspent amount from previous day
 
     daysArray.forEach((date, index) => {
       const dateKey = format(date, "yyyy-MM-dd");
-      const spent = parseFloat(state.expenses[dateKey]) || 0;
+      const expenseInput = state.expenses[dateKey];
+      const hasInput = expenseInput !== undefined && expenseInput !== "";
       
       // This day's available amount = base daily + any carryover from previous day
       const availableForDay = baseDaily + carryover;
+      
+      // If no input provided, assume user spent the entire available amount
+      const spent = hasInput ? (parseFloat(expenseInput) || 0) : availableForDay;
       const remaining = availableForDay - spent;
       
-      // Track unspent amount for next day (can't go negative)
-      carryover = Math.max(0, remaining);
+      // Track unspent or overspent amount for next day (can go negative for overspending)
+      carryover = remaining;
       
       days.push({
         date,
