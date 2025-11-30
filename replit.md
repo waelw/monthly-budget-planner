@@ -2,15 +2,16 @@
 
 ## Overview
 
-A utility-focused financial planning tool that helps users manage their monthly budget by calculating daily spending allowances. Users input their total monthly budget, desired savings amount, and select a month to view how much they can spend each day while meeting their savings goals. The application features a clean, design system-based interface built with React and styled using Tailwind CSS with shadcn/ui components.
+A utility-focused financial planning tool that helps users manage their budget by calculating daily spending allowances. Users input their total budget, create multiple categorized savings goals, and select a custom date range to view how much they can spend each day while meeting their savings goals. The application includes expense tracking per day, visual progress indicators, and CSV export functionality.
 
 ## Recent Changes (November 2025)
 
-- Implemented complete frontend with input controls, summary cards, and daily spending cards
-- Added local storage persistence for all user inputs
-- Implemented copy-to-clipboard functionality with toast notifications
-- Added responsive grid layout (1/2/3 columns based on viewport)
-- All calculations update in real-time as user types
+- Replaced month selector with custom start/end date range inputs
+- Added multiple savings goals with 10 predefined categories
+- Implemented per-day expense tracking with remaining budget calculations
+- Added visual spending progress bar and summary cards
+- Implemented CSV export functionality for the entire spending plan
+- All data persists to localStorage
 
 ## User Preferences
 
@@ -38,10 +39,19 @@ Preferred communication style: Simple, everyday language.
 - Custom hooks in `client/src/hooks/` (use-toast, use-mobile)
 - Path aliases configured for clean imports (@/, @shared/, @assets/)
 
+**Key Features:**
+- Custom date range selection (start/end dates)
+- Multiple savings goals with categories (Emergency Fund, Vacation, Retirement, Education, Home, Car, Health, Investment, Gifts, Other)
+- Per-day expense tracking with remaining budget display
+- Visual progress indicators (progress bar, total spent/remaining cards)
+- CSV export for spending plan data
+- Copy to clipboard functionality
+- LocalStorage persistence for all user inputs
+
 **Key Design Decisions:**
 - Single-column centered layout (max-width: 3xl) for focused user experience
 - Responsive grid system for daily spending cards (1 column mobile, 2-3 columns desktop)
-- Local storage persistence for user preferences (total amount, savings, selected month)
+- Local storage persistence for user preferences (total amount, savings goals, date range, expenses)
 - No authentication or user accounts - purely client-side utility app
 
 ### Backend Architecture
@@ -65,25 +75,15 @@ Preferred communication style: Simple, everyday language.
 
 ### Data Storage Solutions
 
-**Database Configuration:**
+**Client-Side Persistence:**
+- LocalStorage for saving planner state
+- Storage key: "daily-spending-planner"
+- Persisted data: totalAmount, startDate, endDate, expenses (per day), savingsGoals (with id, name, amount, category)
+
+**Database Configuration (unused for core features):**
 - Drizzle ORM configured for PostgreSQL via `@neondatabase/serverless`
 - Schema defined in `shared/schema.ts` with basic user table
 - Migration support via drizzle-kit
-
-**Storage Interface:**
-- Abstract `IStorage` interface for CRUD operations
-- Current implementation: `MemStorage` (in-memory, non-persistent)
-- Designed for future database integration without code changes
-
-**Client-Side Persistence:**
-- LocalStorage for saving planner state (budget, savings, month selection)
-- Storage key: "daily-spending-planner"
-- No server-side persistence currently required for core functionality
-
-**Design Rationale:**
-- Application is primarily a client-side calculator/utility
-- User table schema exists but isn't actively used
-- Database infrastructure prepared for future features (user accounts, saved plans, history)
 
 ### External Dependencies
 
@@ -103,7 +103,7 @@ Preferred communication style: Simple, everyday language.
 
 **Date Handling:**
 - date-fns - Date manipulation and formatting library
-- Used for: calculating days in month, date formatting, month navigation
+- Used for: calculating days in interval, date formatting, date parsing, start/end of month defaults
 
 **Styling:**
 - tailwindcss - Utility-first CSS framework
@@ -138,7 +138,3 @@ Preferred communication style: Simple, everyday language.
 
 **Routing:**
 - wouter - Minimalist routing for React (~1.2KB alternative to React Router)
-
-**Third-Party Service Integration:**
-- None currently active
-- Infrastructure prepared for: authentication (passport.js), email (nodemailer), payments (stripe), AI (OpenAI, Google Generative AI)
