@@ -1,19 +1,48 @@
 import { useState, useEffect, useMemo } from "react";
 import { format, eachDayOfInterval, differenceInDays, parseISO, isValid, startOfMonth, endOfMonth } from "date-fns";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { Copy, Check, Calendar, Wallet, PiggyBank } from "lucide-react";
+import { Progress } from "@/components/ui/progress";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Copy, Check, Calendar, Wallet, PiggyBank, TrendingDown, TrendingUp, Plus, X, Target, FileDown } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 const STORAGE_KEY = "daily-spending-planner";
 
+const SAVINGS_CATEGORIES = [
+  { value: "emergency", label: "Emergency Fund" },
+  { value: "vacation", label: "Vacation" },
+  { value: "retirement", label: "Retirement" },
+  { value: "education", label: "Education" },
+  { value: "home", label: "Home/Rent" },
+  { value: "car", label: "Car/Transport" },
+  { value: "health", label: "Health" },
+  { value: "investment", label: "Investment" },
+  { value: "gift", label: "Gifts" },
+  { value: "other", label: "Other" },
+];
+
+interface SavingsGoal {
+  id: string;
+  name: string;
+  amount: string;
+  category: string;
+}
+
 interface PlannerState {
   totalAmount: string;
-  desiredSaving: string;
   startDate: string;
   endDate: string;
+  expenses: Record<string, string>;
+  savingsGoals: SavingsGoal[];
 }
 
 function formatCurrency(amount: number): string {
@@ -33,6 +62,10 @@ function getDefaultDates() {
   };
 }
 
+function generateId(): string {
+  return Math.random().toString(36).substring(2, 9);
+}
+
 export default function Home() {
   const { toast } = useToast();
   const [copied, setCopied] = useState(false);
@@ -43,15 +76,17 @@ export default function Home() {
       if (saved) {
         try {
           const parsed = JSON.parse(saved);
-          if (parsed.startDate && parsed.endDate) {
-            return parsed;
-          }
           const defaults = getDefaultDates();
+          const migratedGoals = (parsed.savingsGoals || []).map((goal: SavingsGoal) => ({
+            ...goal,
+            category: goal.category || "other",
+          }));
           return {
             totalAmount: parsed.totalAmount || "",
-            desiredSaving: parsed.desiredSaving || "0",
-            startDate: defaults.startDate,
-            endDate: defaults.endDate,
+            startDate: parsed.startDate || defaults.startDate,
+            endDate: parsed.endDate || defaults.endDate,
+            expenses: parsed.expenses || {},
+            savingsGoals: migratedGoals.length > 0 ? migratedGoals : [{ id: generateId(), name: "General Savings", amount: "0", category: "other" }],
           };
         } catch {
           // Invalid JSON, use defaults
@@ -61,9 +96,10 @@ export default function Home() {
     const defaults = getDefaultDates();
     return {
       totalAmount: "",
-      desiredSaving: "0",
       startDate: defaults.startDate,
       endDate: defaults.endDate,
+      expenses: {},
+      savingsGoals: [{ id: generateId(), name: "General Savings", amount: "0", category: "other" }],
     };
   });
 
@@ -71,10 +107,24 @@ export default function Home() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   }, [state]);
 
+  const totalSavings = useMemo(() => {
+    return state.savingsGoals.reduce((sum, goal) => sum + (parseFloat(goal.amount) || 0), 0);
+  }, [state.savingsGoals]);
+
+  const savingsByCategory = useMemo(() => {
+    const grouped: Record<string, number> = {};
+    state.savingsGoals.forEach((goal) => {
+      const amount = parseFloat(goal.amount) || 0;
+      if (amount > 0) {
+        grouped[goal.category] = (grouped[goal.category] || 0) + amount;
+      }
+    });
+    return grouped;
+  }, [state.savingsGoals]);
+
   const calculations = useMemo(() => {
     const total = parseFloat(state.totalAmount) || 0;
-    const saving = parseFloat(state.desiredSaving) || 0;
-    const available = Math.max(0, total - saving);
+    const available = Math.max(0, total - totalSavings);
     
     const startDate = parseISO(state.startDate);
     const endDate = parseISO(state.endDate);
@@ -86,18 +136,33 @@ export default function Home() {
         dailyAllowance: 0,
         days: [],
         isValidRange: false,
+        totalSpent: 0,
+        totalRemaining: available,
+        spentPercentage: 0,
       };
     }
     
     const daysCount = differenceInDays(endDate, startDate) + 1;
     const dailyAllowance = daysCount > 0 ? available / daysCount : 0;
 
-    const days = eachDayOfInterval({ start: startDate, end: endDate }).map((date) => ({
-      date,
-      formattedDate: format(date, "MMMM d, yyyy"),
-      dayName: format(date, "EEEE"),
-      amount: dailyAllowance,
-    }));
+    const days = eachDayOfInterval({ start: startDate, end: endDate }).map((date) => {
+      const dateKey = format(date, "yyyy-MM-dd");
+      const spent = parseFloat(state.expenses[dateKey]) || 0;
+      const remaining = dailyAllowance - spent;
+      return {
+        date,
+        dateKey,
+        formattedDate: format(date, "MMMM d, yyyy"),
+        dayName: format(date, "EEEE"),
+        allowance: dailyAllowance,
+        spent,
+        remaining,
+      };
+    });
+
+    const totalSpent = days.reduce((sum, day) => sum + day.spent, 0);
+    const totalRemaining = available - totalSpent;
+    const spentPercentage = available > 0 ? Math.min(100, (totalSpent / available) * 100) : 0;
 
     return {
       daysCount,
@@ -105,12 +170,56 @@ export default function Home() {
       dailyAllowance,
       days,
       isValidRange: true,
+      totalSpent,
+      totalRemaining,
+      spentPercentage,
     };
-  }, [state.totalAmount, state.desiredSaving, state.startDate, state.endDate]);
+  }, [state.totalAmount, state.startDate, state.endDate, state.expenses, totalSavings]);
+
+  const handleExpenseChange = (dateKey: string, value: string) => {
+    setState((prev) => ({
+      ...prev,
+      expenses: {
+        ...prev.expenses,
+        [dateKey]: value,
+      },
+    }));
+  };
+
+  const addSavingsGoal = () => {
+    setState((prev) => ({
+      ...prev,
+      savingsGoals: [...prev.savingsGoals, { id: generateId(), name: "", amount: "0", category: "other" }],
+    }));
+  };
+
+  const updateSavingsGoal = (id: string, field: "name" | "amount" | "category", value: string) => {
+    setState((prev) => ({
+      ...prev,
+      savingsGoals: prev.savingsGoals.map((goal) =>
+        goal.id === id ? { ...goal, [field]: value } : goal
+      ),
+    }));
+  };
+
+  const removeSavingsGoal = (id: string) => {
+    if (state.savingsGoals.length <= 1) {
+      toast({
+        title: "Cannot remove",
+        description: "You need at least one savings goal",
+        variant: "destructive",
+      });
+      return;
+    }
+    setState((prev) => ({
+      ...prev,
+      savingsGoals: prev.savingsGoals.filter((goal) => goal.id !== id),
+    }));
+  };
 
   const handleCopy = async () => {
     const lines = calculations.days.map(
-      (day) => `${day.dayName}, ${day.formattedDate} → ${formatCurrency(day.amount)}`
+      (day) => `${day.dayName}, ${day.formattedDate} → Allowance: ${formatCurrency(day.allowance)}${day.spent > 0 ? `, Spent: ${formatCurrency(day.spent)}, Remaining: ${formatCurrency(day.remaining)}` : ""}`
     );
     const text = lines.join("\n");
 
@@ -131,7 +240,39 @@ export default function Home() {
     }
   };
 
+  const exportToCSV = () => {
+    const headers = ["Date", "Day", "Allowance", "Spent", "Remaining"];
+    const rows = calculations.days.map((day) => [
+      day.formattedDate,
+      day.dayName,
+      day.allowance.toFixed(2),
+      day.spent.toFixed(2),
+      day.remaining.toFixed(2),
+    ]);
+    
+    const csvContent = [
+      headers.join(","),
+      ...rows.map((row) => row.join(",")),
+    ].join("\n");
+    
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `spending-plan-${state.startDate}-to-${state.endDate}.csv`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+    
+    toast({
+      title: "Exported!",
+      description: "CSV file downloaded",
+    });
+  };
+
   const hasValidInput = parseFloat(state.totalAmount) > 0 && calculations.isValidRange;
+
+  const getCategoryLabel = (value: string) => {
+    return SAVINGS_CATEGORIES.find((c) => c.value === value)?.label || value;
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -144,11 +285,11 @@ export default function Home() {
             Daily Spending Planner
           </h1>
           <p className="text-muted-foreground mt-2 text-sm md:text-base">
-            Plan how much you can spend each day
+            Plan and track your daily spending
           </p>
         </header>
 
-        <Card className="mb-8">
+        <Card className="mb-6">
           <CardContent className="p-6 md:p-8">
             <div className="grid gap-6 md:grid-cols-2 mb-6">
               <div className="space-y-2">
@@ -173,24 +314,13 @@ export default function Home() {
               </div>
 
               <div className="space-y-2">
-                <Label 
-                  htmlFor="desiredSaving" 
-                  className="text-sm font-medium flex items-center gap-2"
-                >
+                <Label className="text-sm font-medium flex items-center gap-2">
                   <PiggyBank className="h-4 w-4 text-muted-foreground" />
-                  Desired Saving
+                  Total Savings: {formatCurrency(totalSavings)}
                 </Label>
-                <Input
-                  id="desiredSaving"
-                  type="number"
-                  placeholder="e.g., 500"
-                  value={state.desiredSaving}
-                  onChange={(e) =>
-                    setState((prev) => ({ ...prev, desiredSaving: e.target.value }))
-                  }
-                  className="h-12 text-base"
-                  data-testid="input-desired-saving"
-                />
+                <div className="h-12 flex items-center text-sm text-muted-foreground">
+                  From {state.savingsGoals.length} goal{state.savingsGoals.length !== 1 ? "s" : ""} below
+                </div>
               </div>
             </div>
 
@@ -238,9 +368,103 @@ export default function Home() {
           </CardContent>
         </Card>
 
+        <Card className="mb-8">
+          <CardHeader className="pb-4">
+            <div className="flex items-center justify-between gap-4 flex-wrap">
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <Target className="h-5 w-5 text-muted-foreground" />
+                Savings Goals
+              </CardTitle>
+              <Button
+                onClick={addSavingsGoal}
+                variant="outline"
+                size="sm"
+                className="gap-2"
+                data-testid="button-add-goal"
+              >
+                <Plus className="h-4 w-4" />
+                Add Goal
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className="space-y-3">
+              {state.savingsGoals.map((goal, index) => (
+                <div 
+                  key={goal.id} 
+                  className="flex flex-col sm:flex-row items-start sm:items-center gap-3"
+                  data-testid={`savings-goal-${index + 1}`}
+                >
+                  <Select
+                    value={goal.category}
+                    onValueChange={(value) => updateSavingsGoal(goal.id, "category", value)}
+                  >
+                    <SelectTrigger 
+                      className="w-full sm:w-40"
+                      data-testid={`select-goal-category-${index + 1}`}
+                    >
+                      <SelectValue placeholder="Category" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {SAVINGS_CATEGORIES.map((cat) => (
+                        <SelectItem key={cat.value} value={cat.value}>
+                          {cat.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Input
+                    type="text"
+                    placeholder="Goal name"
+                    value={goal.name}
+                    onChange={(e) => updateSavingsGoal(goal.id, "name", e.target.value)}
+                    className="flex-1"
+                    data-testid={`input-goal-name-${index + 1}`}
+                  />
+                  <Input
+                    type="number"
+                    placeholder="Amount"
+                    value={goal.amount}
+                    onChange={(e) => updateSavingsGoal(goal.id, "amount", e.target.value)}
+                    className="w-full sm:w-32"
+                    data-testid={`input-goal-amount-${index + 1}`}
+                  />
+                  <Button
+                    onClick={() => removeSavingsGoal(goal.id)}
+                    variant="ghost"
+                    size="icon"
+                    className="shrink-0"
+                    data-testid={`button-remove-goal-${index + 1}`}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+            
+            {Object.keys(savingsByCategory).length > 0 && (
+              <div className="mt-6 pt-4 border-t">
+                <p className="text-sm font-medium text-muted-foreground mb-3">Savings by Category</p>
+                <div className="grid gap-2 grid-cols-2 sm:grid-cols-3">
+                  {Object.entries(savingsByCategory).map(([category, amount]) => (
+                    <div 
+                      key={category} 
+                      className="p-2 rounded-lg bg-muted/50 text-sm"
+                      data-testid={`category-summary-${category}`}
+                    >
+                      <p className="text-xs text-muted-foreground">{getCategoryLabel(category)}</p>
+                      <p className="font-semibold tabular-nums">{formatCurrency(amount)}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
         {hasValidInput && (
           <>
-            <div className="grid gap-4 md:grid-cols-2 mb-8">
+            <div className="grid gap-4 md:grid-cols-2 mb-6">
               <Card className="bg-primary/5 border-primary/20">
                 <CardContent className="p-6">
                   <p className="text-sm font-medium text-muted-foreground mb-1">
@@ -269,35 +493,90 @@ export default function Home() {
               </Card>
             </div>
 
+            <Card className="mb-8">
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between gap-4 flex-wrap mb-4">
+                  <div className="flex items-center gap-2">
+                    <TrendingDown className="h-5 w-5 text-muted-foreground" />
+                    <span className="text-sm font-medium text-muted-foreground">Spending Progress</span>
+                  </div>
+                  <div className="text-sm text-muted-foreground">
+                    <span className="font-semibold text-foreground">{formatCurrency(calculations.totalSpent)}</span>
+                    {" / "}
+                    {formatCurrency(calculations.available)}
+                  </div>
+                </div>
+                <Progress 
+                  value={calculations.spentPercentage} 
+                  className="h-3 mb-4"
+                  data-testid="progress-spending"
+                />
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
+                    <TrendingDown className="h-5 w-5 text-destructive" />
+                    <div>
+                      <p className="text-xs text-muted-foreground">Total Spent</p>
+                      <p className="font-semibold tabular-nums" data-testid="text-total-spent">
+                        {formatCurrency(calculations.totalSpent)}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
+                    <TrendingUp className={`h-5 w-5 ${calculations.totalRemaining >= 0 ? 'text-green-600' : 'text-destructive'}`} />
+                    <div>
+                      <p className="text-xs text-muted-foreground">Remaining Budget</p>
+                      <p 
+                        className={`font-semibold tabular-nums ${calculations.totalRemaining < 0 ? 'text-destructive' : ''}`}
+                        data-testid="text-total-remaining"
+                      >
+                        {formatCurrency(calculations.totalRemaining)}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
             <div className="flex items-center justify-between gap-4 flex-wrap mb-6">
               <h2 className="text-lg font-semibold text-foreground">
                 {calculations.daysCount} Days
               </h2>
-              <Button
-                onClick={handleCopy}
-                variant="outline"
-                className="gap-2"
-                data-testid="button-copy-plan"
-              >
-                {copied ? (
-                  <>
-                    <Check className="h-4 w-4" />
-                    Copied!
-                  </>
-                ) : (
-                  <>
-                    <Copy className="h-4 w-4" />
-                    Copy Plan
-                  </>
-                )}
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  onClick={exportToCSV}
+                  variant="outline"
+                  className="gap-2"
+                  data-testid="button-export-csv"
+                >
+                  <FileDown className="h-4 w-4" />
+                  Export CSV
+                </Button>
+                <Button
+                  onClick={handleCopy}
+                  variant="outline"
+                  className="gap-2"
+                  data-testid="button-copy-plan"
+                >
+                  {copied ? (
+                    <>
+                      <Check className="h-4 w-4" />
+                      Copied!
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="h-4 w-4" />
+                      Copy
+                    </>
+                  )}
+                </Button>
+              </div>
             </div>
 
             <div className="grid gap-3 md:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
               {calculations.days.map((day, index) => (
                 <Card 
-                  key={index} 
-                  className="hover-elevate transition-shadow duration-200"
+                  key={day.dateKey} 
+                  className={`transition-shadow duration-200 ${day.remaining < 0 ? 'border-destructive/50' : ''}`}
                   data-testid={`card-day-${index + 1}`}
                 >
                   <CardContent className="p-4">
@@ -308,11 +587,29 @@ export default function Home() {
                       {day.formattedDate}
                     </p>
                     <p 
-                      className="text-2xl font-bold tabular-nums text-foreground"
-                      data-testid={`text-amount-day-${index + 1}`}
+                      className="text-xl font-bold tabular-nums text-foreground mb-3"
+                      data-testid={`text-allowance-day-${index + 1}`}
                     >
-                      {formatCurrency(day.amount)}
+                      {formatCurrency(day.allowance)}
                     </p>
+                    
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type="number"
+                          placeholder="Spent"
+                          value={state.expenses[day.dateKey] || ""}
+                          onChange={(e) => handleExpenseChange(day.dateKey, e.target.value)}
+                          className="h-9 text-sm"
+                          data-testid={`input-expense-day-${index + 1}`}
+                        />
+                      </div>
+                      {day.spent > 0 && (
+                        <div className={`text-sm font-medium tabular-nums ${day.remaining >= 0 ? 'text-green-600 dark:text-green-500' : 'text-destructive'}`}>
+                          {day.remaining >= 0 ? '+' : ''}{formatCurrency(day.remaining)} remaining
+                        </div>
+                      )}
+                    </div>
                   </CardContent>
                 </Card>
               ))}
