@@ -143,21 +143,32 @@ export default function Home() {
     }
     
     const daysCount = differenceInDays(endDate, startDate) + 1;
-    const dailyAllowance = daysCount > 0 ? available / daysCount : 0;
+    const baseDaily = daysCount > 0 ? available / daysCount : 0;
 
-    const days = eachDayOfInterval({ start: startDate, end: endDate }).map((date) => {
+    const daysArray = eachDayOfInterval({ start: startDate, end: endDate });
+    const days: any[] = [];
+    let carryover = 0; // Track unspent amount from previous day
+
+    daysArray.forEach((date, index) => {
       const dateKey = format(date, "yyyy-MM-dd");
       const spent = parseFloat(state.expenses[dateKey]) || 0;
-      const remaining = dailyAllowance - spent;
-      return {
+      
+      // This day's available amount = base daily + any carryover from previous day
+      const availableForDay = baseDaily + carryover;
+      const remaining = availableForDay - spent;
+      
+      // Track unspent amount for next day (can't go negative)
+      carryover = Math.max(0, remaining);
+      
+      days.push({
         date,
         dateKey,
         formattedDate: format(date, "MMMM d, yyyy"),
         dayName: format(date, "EEEE"),
-        allowance: dailyAllowance,
+        allowance: availableForDay,
         spent,
         remaining,
-      };
+      });
     });
 
     const totalSpent = days.reduce((sum, day) => sum + day.spent, 0);
@@ -167,7 +178,7 @@ export default function Home() {
     return {
       daysCount,
       available,
-      dailyAllowance,
+      dailyAllowance: baseDaily,
       days,
       isValidRange: true,
       totalSpent,
