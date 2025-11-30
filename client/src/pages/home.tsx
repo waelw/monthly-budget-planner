@@ -1,16 +1,9 @@
 import { useState, useEffect, useMemo } from "react";
-import { format, getDaysInMonth, startOfMonth, addDays } from "date-fns";
+import { format, eachDayOfInterval, differenceInDays, parseISO, isValid, startOfMonth, endOfMonth } from "date-fns";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Copy, Check, Calendar, Wallet, PiggyBank } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -19,7 +12,8 @@ const STORAGE_KEY = "daily-spending-planner";
 interface PlannerState {
   totalAmount: string;
   desiredSaving: string;
-  selectedMonth: string;
+  startDate: string;
+  endDate: string;
 }
 
 function formatCurrency(amount: number): string {
@@ -29,19 +23,14 @@ function formatCurrency(amount: number): string {
   }).format(amount);
 }
 
-function generateMonthOptions(): { value: string; label: string }[] {
-  const options: { value: string; label: string }[] = [];
+function getDefaultDates() {
   const today = new Date();
-  
-  for (let i = -2; i <= 12; i++) {
-    const date = new Date(today.getFullYear(), today.getMonth() + i, 1);
-    options.push({
-      value: format(date, "yyyy-MM"),
-      label: format(date, "MMMM yyyy"),
-    });
-  }
-  
-  return options;
+  const start = startOfMonth(today);
+  const end = endOfMonth(today);
+  return {
+    startDate: format(start, "yyyy-MM-dd"),
+    endDate: format(end, "yyyy-MM-dd"),
+  };
 }
 
 export default function Home() {
@@ -53,20 +42,30 @@ export default function Home() {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
         try {
-          return JSON.parse(saved);
+          const parsed = JSON.parse(saved);
+          if (parsed.startDate && parsed.endDate) {
+            return parsed;
+          }
+          const defaults = getDefaultDates();
+          return {
+            totalAmount: parsed.totalAmount || "",
+            desiredSaving: parsed.desiredSaving || "0",
+            startDate: defaults.startDate,
+            endDate: defaults.endDate,
+          };
         } catch {
           // Invalid JSON, use defaults
         }
       }
     }
+    const defaults = getDefaultDates();
     return {
       totalAmount: "",
       desiredSaving: "0",
-      selectedMonth: format(new Date(), "yyyy-MM"),
+      startDate: defaults.startDate,
+      endDate: defaults.endDate,
     };
   });
-
-  const monthOptions = useMemo(() => generateMonthOptions(), []);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -75,31 +74,39 @@ export default function Home() {
   const calculations = useMemo(() => {
     const total = parseFloat(state.totalAmount) || 0;
     const saving = parseFloat(state.desiredSaving) || 0;
-    const [year, month] = state.selectedMonth.split("-").map(Number);
-    const daysInMonth = getDaysInMonth(new Date(year, month - 1));
     const available = Math.max(0, total - saving);
-    const dailyAllowance = daysInMonth > 0 ? available / daysInMonth : 0;
-
-    const days: { date: Date; formattedDate: string; dayName: string; amount: number }[] = [];
-    const monthStart = startOfMonth(new Date(year, month - 1));
     
-    for (let i = 0; i < daysInMonth; i++) {
-      const date = addDays(monthStart, i);
-      days.push({
-        date,
-        formattedDate: format(date, "MMMM d, yyyy"),
-        dayName: format(date, "EEEE"),
-        amount: dailyAllowance,
-      });
+    const startDate = parseISO(state.startDate);
+    const endDate = parseISO(state.endDate);
+    
+    if (!isValid(startDate) || !isValid(endDate) || startDate > endDate) {
+      return {
+        daysCount: 0,
+        available,
+        dailyAllowance: 0,
+        days: [],
+        isValidRange: false,
+      };
     }
+    
+    const daysCount = differenceInDays(endDate, startDate) + 1;
+    const dailyAllowance = daysCount > 0 ? available / daysCount : 0;
+
+    const days = eachDayOfInterval({ start: startDate, end: endDate }).map((date) => ({
+      date,
+      formattedDate: format(date, "MMMM d, yyyy"),
+      dayName: format(date, "EEEE"),
+      amount: dailyAllowance,
+    }));
 
     return {
-      daysInMonth,
+      daysCount,
       available,
       dailyAllowance,
       days,
+      isValidRange: true,
     };
-  }, [state.totalAmount, state.desiredSaving, state.selectedMonth]);
+  }, [state.totalAmount, state.desiredSaving, state.startDate, state.endDate]);
 
   const handleCopy = async () => {
     const lines = calculations.days.map(
@@ -112,7 +119,7 @@ export default function Home() {
       setCopied(true);
       toast({
         title: "Copied!",
-        description: "Month plan copied to clipboard",
+        description: "Spending plan copied to clipboard",
       });
       setTimeout(() => setCopied(false), 2000);
     } catch {
@@ -124,7 +131,7 @@ export default function Home() {
     }
   };
 
-  const hasValidInput = parseFloat(state.totalAmount) > 0;
+  const hasValidInput = parseFloat(state.totalAmount) > 0 && calculations.isValidRange;
 
   return (
     <div className="min-h-screen bg-background">
@@ -137,13 +144,13 @@ export default function Home() {
             Daily Spending Planner
           </h1>
           <p className="text-muted-foreground mt-2 text-sm md:text-base">
-            Plan how much you can spend each day of the month
+            Plan how much you can spend each day
           </p>
         </header>
 
         <Card className="mb-8">
           <CardContent className="p-6 md:p-8">
-            <div className="grid gap-6 md:grid-cols-3">
+            <div className="grid gap-6 md:grid-cols-2 mb-6">
               <div className="space-y-2">
                 <Label 
                   htmlFor="totalAmount" 
@@ -185,40 +192,47 @@ export default function Home() {
                   data-testid="input-desired-saving"
                 />
               </div>
+            </div>
 
+            <div className="grid gap-6 md:grid-cols-2">
               <div className="space-y-2">
                 <Label 
-                  htmlFor="month" 
+                  htmlFor="startDate" 
                   className="text-sm font-medium flex items-center gap-2"
                 >
                   <Calendar className="h-4 w-4 text-muted-foreground" />
-                  Month
+                  Start Date
                 </Label>
-                <Select
-                  value={state.selectedMonth}
-                  onValueChange={(value) =>
-                    setState((prev) => ({ ...prev, selectedMonth: value }))
+                <Input
+                  id="startDate"
+                  type="date"
+                  value={state.startDate}
+                  onChange={(e) =>
+                    setState((prev) => ({ ...prev, startDate: e.target.value }))
                   }
+                  className="h-12 text-base"
+                  data-testid="input-start-date"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label 
+                  htmlFor="endDate" 
+                  className="text-sm font-medium flex items-center gap-2"
                 >
-                  <SelectTrigger 
-                    id="month" 
-                    className="h-12 text-base"
-                    data-testid="select-month"
-                  >
-                    <SelectValue placeholder="Select month" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {monthOptions.map((option) => (
-                      <SelectItem 
-                        key={option.value} 
-                        value={option.value}
-                        data-testid={`option-month-${option.value}`}
-                      >
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  <Calendar className="h-4 w-4 text-muted-foreground" />
+                  End Date
+                </Label>
+                <Input
+                  id="endDate"
+                  type="date"
+                  value={state.endDate}
+                  onChange={(e) =>
+                    setState((prev) => ({ ...prev, endDate: e.target.value }))
+                  }
+                  className="h-12 text-base"
+                  data-testid="input-end-date"
+                />
               </div>
             </div>
           </CardContent>
@@ -255,9 +269,9 @@ export default function Home() {
               </Card>
             </div>
 
-            <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center justify-between gap-4 flex-wrap mb-6">
               <h2 className="text-lg font-semibold text-foreground">
-                {calculations.daysInMonth} Days
+                {calculations.daysCount} Days
               </h2>
               <Button
                 onClick={handleCopy}
@@ -273,7 +287,7 @@ export default function Home() {
                 ) : (
                   <>
                     <Copy className="h-4 w-4" />
-                    Copy Month Plan
+                    Copy Plan
                   </>
                 )}
               </Button>
@@ -312,7 +326,12 @@ export default function Home() {
             data-testid="text-empty-state"
           >
             <Wallet className="h-12 w-12 mx-auto mb-4 opacity-50" />
-            <p className="text-lg">Enter your total amount to see your daily spending plan</p>
+            <p className="text-lg">
+              {!calculations.isValidRange && state.startDate && state.endDate
+                ? "Please select a valid date range (end date must be after start date)"
+                : "Enter your total amount and date range to see your daily spending plan"
+              }
+            </p>
           </div>
         )}
       </div>
