@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { format, eachDayOfInterval, differenceInDays, parseISO, isValid, startOfMonth, endOfMonth, isToday } from "date-fns";
+import { format, eachDayOfInterval, differenceInDays, parseISO, isValid, startOfMonth, endOfMonth, isToday, isPast, isBefore } from "date-fns";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -179,6 +179,19 @@ export default function Home() {
     const totalRemaining = available - totalSpent;
     const spentPercentage = available > 0 ? Math.min(100, (totalSpent / available) * 100) : 0;
 
+    // Calculate spending up to and including today
+    const today = new Date();
+    today.setHours(0, 0, 0, 0); // Normalize to start of day for comparison
+    const spentUpToToday = days.reduce((sum, day) => {
+      const dayDate = new Date(day.date);
+      dayDate.setHours(0, 0, 0, 0);
+      // Include today and past days
+      if (isBefore(dayDate, today) || isToday(dayDate)) {
+        return sum + day.spent;
+      }
+      return sum;
+    }, 0);
+
     return {
       daysCount,
       available,
@@ -188,6 +201,7 @@ export default function Home() {
       totalSpent,
       totalRemaining,
       spentPercentage,
+      spentUpToToday,
     };
   }, [state.totalAmount, state.startDate, state.endDate, state.expenses, totalSavings]);
 
@@ -526,13 +540,22 @@ export default function Home() {
                   className="h-3 mb-4"
                   data-testid="progress-spending"
                 />
-                <div className="grid gap-4 md:grid-cols-2">
+                <div className="grid gap-4 md:grid-cols-3">
                   <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
                     <TrendingDown className="h-5 w-5 text-destructive" />
                     <div>
                       <p className="text-xs text-muted-foreground">Total Spent</p>
                       <p className="font-semibold tabular-nums" data-testid="text-total-spent">
                         {formatCurrency(calculations.totalSpent)}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 p-3 rounded-lg bg-primary/10 border border-primary/20">
+                    <Calendar className="h-5 w-5 text-primary" />
+                    <div>
+                      <p className="text-xs text-muted-foreground">Spent Up To Today</p>
+                      <p className="font-semibold tabular-nums text-primary" data-testid="text-spent-up-to-today">
+                        {formatCurrency(calculations.spentUpToToday)}
                       </p>
                     </div>
                   </div>
