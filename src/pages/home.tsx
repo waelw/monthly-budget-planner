@@ -176,9 +176,8 @@ export default function Home() {
     });
 
     const totalSpent = days.reduce((sum, day) => sum + day.spent, 0);
-    const totalRemaining = available - totalSpent;
     const spentPercentage = available > 0 ? Math.min(100, (totalSpent / available) * 100) : 0;
-
+    
     // Calculate spending up to and including today
     const today = new Date();
     today.setHours(0, 0, 0, 0); // Normalize to start of day for comparison
@@ -191,7 +190,8 @@ export default function Home() {
       }
       return sum;
     }, 0);
-
+    const totalRemaining = total - spentUpToToday;
+    
     return {
       daysCount,
       available,
@@ -540,16 +540,8 @@ export default function Home() {
                   className="h-3 mb-4"
                   data-testid="progress-spending"
                 />
-                <div className="grid gap-4 md:grid-cols-3">
-                  <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
-                    <TrendingDown className="h-5 w-5 text-destructive" />
-                    <div>
-                      <p className="text-xs text-muted-foreground">Total Spent</p>
-                      <p className="font-semibold tabular-nums" data-testid="text-total-spent">
-                        {formatCurrency(calculations.totalSpent)}
-                      </p>
-                    </div>
-                  </div>
+                <div className="grid gap-4 md:grid-cols-2">
+
                   <div className="flex items-center gap-3 p-3 rounded-lg bg-primary/10 border border-primary/20">
                     <Calendar className="h-5 w-5 text-primary" />
                     <div>
