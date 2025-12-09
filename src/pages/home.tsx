@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { format, eachDayOfInterval, differenceInDays, parseISO, isValid, startOfMonth, endOfMonth } from "date-fns";
+import { format, eachDayOfInterval, differenceInDays, parseISO, isValid, startOfMonth, endOfMonth, isToday } from "date-fns";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -588,16 +588,31 @@ export default function Home() {
             </div>
 
             <div className="grid gap-3 md:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-              {calculations.days.map((day, index) => (
+              {calculations.days.map((day, index) => {
+                const isCurrentDay = isToday(day.date);
+                return (
                 <Card 
                   key={day.dateKey} 
-                  className={`transition-shadow duration-200 ${day.remaining < 0 ? 'border-destructive/50' : ''}`}
+                  className={`transition-shadow duration-200 ${
+                    isCurrentDay 
+                      ? 'border-primary border-2 shadow-lg ring-2 ring-primary/20 bg-primary/5' 
+                      : day.remaining < 0 
+                        ? 'border-destructive/50' 
+                        : ''
+                  }`}
                   data-testid={`card-day-${index + 1}`}
                 >
                   <CardContent className="p-4">
-                    <p className="text-lg font-semibold text-foreground">
-                      {day.dayName}
-                    </p>
+                    <div className="flex items-center justify-between mb-1">
+                      <p className="text-lg font-semibold text-foreground">
+                        {day.dayName}
+                      </p>
+                      {isCurrentDay && (
+                        <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-primary text-primary-foreground">
+                          Today
+                        </span>
+                      )}
+                    </div>
                     <p className="text-sm text-muted-foreground mb-3">
                       {day.formattedDate}
                     </p>
@@ -627,7 +642,8 @@ export default function Home() {
                     </div>
                   </CardContent>
                 </Card>
-              ))}
+              );
+              })}
             </div>
           </>
         )}
